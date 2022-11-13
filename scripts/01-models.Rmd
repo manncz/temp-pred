@@ -1,0 +1,69 @@
+---
+title: "Process Historical Temp Data"
+author: "Charlotte Mann GSI"
+date: "`r Sys.Date()`"
+output: md_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+mypacks <- c("dplyr", "lubridate", "stringr", "foreach")  # what packages are needed?
+lapply(mypacks, library, character.only=TRUE)  # load all packages
+```
+
+## Set up
+Load scraping functions
+```{r, child = '00-wunderground-scrape.Rmd', include = F}
+```
+
+Get vector of station codes
+```{r}
+station_codes <- read.csv("../temp/station_xwalk.csv") %>%
+  select(id) %>%
+  unlist()
+```
+
+Get today's date
+```{r}
+tdy_date <- Sys.Date()
+tdy_date_clean <- str_replace_all(as.character(tdy_date),"\\-","")
+```
+
+Pull yesterday's temperature data
+
+```{r}
+yst_date <- tdy_date - 1
+yst_date_clean <- str_replace_all(as.character(yst_date),"\\-","")
+
+current.temp <- foreach(i = 1:length(station_codes), .combine = rbind) %do% {
+  temp <- fetch_wunderground(stationid = station_codes[i], start_date = yst_date_clean)
+  summarize_wunderground(temp)
+}
+```
+
+## Predict from yesterday's temperature
+
+```{r}
+
+predict_temp_naive <- function(current){
+  
+  
+  
+}
+
+```
+
+## Predict from historical data - 2 weeks around today's date
+
+```{r}
+
+
+```
+
+## Predict from historical data - all days
+
+```{r}
+
+
+```
+
