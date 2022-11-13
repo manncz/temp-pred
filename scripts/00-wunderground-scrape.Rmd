@@ -1,15 +1,21 @@
-##' ---
-##' title: "Functions to Download and Clean Wunderground Data"
-##' output: md_document
-##' ---
-##'
-#+ echo=FALSE, include = FALSE
-knitr::opts_chunk$set(warning=FALSE, echo=TRUE)
-mypacks <- c("dplyr","curl", "jsonlite", "lubridate")  # what packages are needed?
+---
+title: "Functions to Download and Clean Wunderground Data"
+author: "Charlotte Mann GSI"
+date: "`r Sys.Date()`"
+output: md_document
+---
+
+```{r setup2, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+mypacks <- c("dplyr","curl", "jsonlite", "lubridate")   # what packages are needed?
 lapply(mypacks, library, character.only=TRUE)  # load all packages
+```
 
-##' Adapted from script by Yash Patel found [here](https://github.com/yashpatel5400/stats604-project4/blob/main/raw_data/wunderground_download.py)
+Adapted from script by Yash Patel found [here](https://github.com/yashpatel5400/stats604-project4/blob/main/raw_data/wunderground_download.py)
 
+
+Get raw data from wunderground
+```{r}
 fetch_wunderground <- function(stationid = "KPDX", start_date = "20221001", end_date = NULL){
   
   if(is.null(end_date)){end_date = start_date}
@@ -36,39 +42,43 @@ fetch_wunderground <- function(stationid = "KPDX", start_date = "20221001", end_
   
   return(json.dat$observations)
 }
+```
 
+Summarize raw data to get min, mean, and max temps for each date included
+
+```{r}
 summarize_wunderground <- function(raw.table){
   
   stopifnot("temp" %in% colnames(raw.table),
-            "valid_time_gmt" %in% colnames(raw.table))
+            "valid_time_gmt" %in% colnames(raw.table),
+            "obs_id" %in% colnames(raw.table) )
   
-  #wunderground includes the temperatures starting from 8am on the date of interest until
-  #8am of the following calendar day
+#wunderground is not consistent with exactly what times are included in a day, so it is safest to just pull one date at a time
   
   dat <- raw.table %>%
-    select(valid_time_gmt, temp) %>%
+    select(station_code = obs_id, valid_time_gmt, temp) %>%
     mutate(date_time = as_datetime(valid_time_gmt),
            day = date(date_time),
            tod = hour(date_time)) %>%
-    mutate(date_group = case_when(tod < 8 ~ day - days(1),
-                                  TRUE ~ day)) %>%
-    group_by(date_group) %>%
-    summarize(min.temp = min(temp), max.temp = max(temp), mean.temp = mean(temp))
+    mutate(date_group = min(day)) %>%
+    group_by(station_code, date_group) %>%# this is a hacky fix for now - ONLY USE WITH ONE DATE
+    summarize(min_temp = min(temp), max_temp = max(temp), mean_temp = mean(temp),
+              first_obs_time = min(date_time), last_obs_time = max(date_time)) %>%
+    rename(date = date_group)
   
   return(dat)
   
 }
 
+```
 
+Testing
 
-##' Now, let's test it out
+```{r}
 weather.dat <- fetch_wunderground(start_date = "20221106", end_date = "20221107")
 
 weather.dat %>%
   knitr::kable(format = "markdown")
 
 summarize_wunderground(weather.dat)
-
-
-
-
+```
