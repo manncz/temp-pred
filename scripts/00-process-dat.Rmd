@@ -1,0 +1,77 @@
+---
+title: "Process Historical Temp Data"
+author: "Charlotte Mann GSI"
+date: "`r Sys.Date()`"
+output: md_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+mypacks <- c("dplyr", "lubridate")  # what packages are needed?
+lapply(mypacks, library, character.only=TRUE)  # load all packages
+```
+
+Read in raw data, downloaded from NOAA https://www.ncei.noaa.gov/cdo-web/search?datasetid=GHCND. I had to download the data in two different files, which just have different stations.
+
+Data goes from 1/1/1967 through 11/3/2022 (55 years)
+
+```{r}
+raw.dat1 <- read.csv("../raw-data/3139726.csv")
+raw.dat2 <- read.csv("../raw-data/3139742.csv")
+raw.dat <- rbind(raw.dat1, raw.dat2) %>%
+  filter(STATION != "USW00023062")
+
+rm(raw.dat1,raw.dat2)
+```
+
+Read in manually created station ID xwalk, which matches the NOAA station identifiers to the station codes in wunderground.
+
+```{r}
+station.id.xwalk <- read.csv("../temp/station_xwalk.csv")
+```
+
+Check that cross walk matches up
+```{r}
+raw.dat %>%
+  select(STATION, NAME,LATITUDE) %>%
+  distinct() %>%
+  left_join(station.id.xwalk, by = c("STATION", "NAME")) 
+```
+
+Clean up historical data column names and generate a lubridate date column
+
+```{r}
+hist.dat <- raw.dat %>%
+  left_join(station.id.xwalk, by = c("STATION", "NAME")) %>%
+  mutate(date = ymd(DATE)) %>%
+  select(station_id = STATION,
+         station_code = id,
+         station_name = NAME,
+         station_city = city,
+         date_chr = DATE,
+         date,
+         tavg = TAVG,
+         tmin = TMIN,
+         tmax = TMAX)
+```
+
+```{r}
+mean(is.na(hist.dat$tavg))*100
+mean(is.na(hist.dat$tmin))*100
+mean(is.na(hist.dat$tmax))*100
+```
+
+There is a lot of data missing for the average temperature. Fill in with the average of the min and max temperatures in these cases.
+
+```{r}
+hist.dat <- hist.dat %>%
+  mutate(tavg_fill = ifelse(is.na(tavg), (tmax + tmin)/2, tavg))
+
+mean(is.na(hist.dat$tavg_fill))*100
+```
+
+Save processed data
+
+```{r}
+save(hist.dat, file = "../temp/hist-dat-clean.Rdata")
+```
