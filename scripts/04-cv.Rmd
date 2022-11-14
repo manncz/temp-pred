@@ -1,0 +1,78 @@
+---
+title: "Make Temperature PRedictions"
+author: "Charlotte Mann GSI"
+date: "`r Sys.Date()`"
+output: md_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+mypacks <- c("dplyr", "lubridate", "stringr", "foreach","doParallel")  # what packages are needed?
+lapply(mypacks, library, character.only=TRUE)  # load all packages
+```
+
+
+## Set up
+Load scraping functions, prediction functions, and run historical prediction models
+```{r, child = c('00-wunderground-scrape.Rmd', '00-model-funs.Rmd'), include = F}
+```
+
+Load historical temp data
+
+```{r}
+load("../temp/hist-dat-clean.Rdata")
+```
+
+```{r}
+hist.dat <- hist.dat %>%
+  mutate(year = year(date))
+
+table(hist.dat$year)
+```
+
+Leave one year out CV.
+
+I am going to do this leaving out years 1998-2022 since those years have almost full data.
+
+```{r}
+dlag = 1
+
+years <- seq(2000, 2020, by =1)
+
+numCores <- detectCores()
+registerDoParallel(numCores)
+
+out <- foreach(y = years, .combine = rbind) %dopar% {
+  
+  mods <- fit_hist_model(hist.temps = hist.dat %>% filter(year != y), local = F, days_lag = dlag,
+                 date = NULL)
+  
+  test.dat <- hist.dat %>% filter(year != y) %>%
+     group_by(station_code, year) %>%
+      mutate(across(tmin:tavg_fill, ~lag(.x, n = dlag), .names = "{.col}_lag"))
+  
+  test.dat$p.tmin <- predict(mods[["tmin"]], newdata = test.dat)
+  test.dat$p.tmax <- predict(mods[["tmax"]], newdata = test.dat)
+  test.dat$p.tavg <- predict(mods[["tavg"]], newdata = test.dat)
+  
+  mse.result <- test.dat %>%
+    ungroup() %>%
+    mutate(err.tmin = tmin-p.tmin,
+           err.tmax = tmax-p.tmax,
+           err.tavg = tavg-p.tavg) %>%
+    mutate(across(starts_with("err"), ~mean(.x, na.rm=T), .names="mse_{.col}")) %>%
+    group_by(station_code) %>%
+    summarize(across((starts_with("err")|starts_with("mse")),~mean(.x, na.rm=T))) %>%
+    mutate(days_lag = dlag,
+           test_year = y)
+ 
+}
+stopImplicitCluster()
+
+
+mse.res <- out %>%
+  group_by(station_code, days_lag) %>%
+  summarize(across((starts_with("err")|starts_with("mse")),~mean(.x, na.rm=T)))
+
+```
+
