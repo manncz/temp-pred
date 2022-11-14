@@ -11,36 +11,6 @@ mypacks <- c("dplyr", "lubridate", "stringr", "foreach")  # what packages are ne
 lapply(mypacks, library, character.only=TRUE)  # load all packages
 ```
 
-## Set up
-Load scraping functions
-```{r, child = '00-wunderground-scrape.Rmd', include = F}
-```
-
-Get vector of station codes
-```{r}
-station_codes <- read.csv("../temp/station_xwalk.csv") %>%
-  select(id) %>%
-  unlist()
-```
-
-Get today's date
-```{r}
-tdy_date <- Sys.Date()
-tdy_date_clean <- str_replace_all(as.character(tdy_date),"\\-","")
-```
-
-Pull yesterday's temperature data
-
-```{r}
-yst_date <- tdy_date - 1
-yst_date_clean <- str_replace_all(as.character(yst_date),"\\-","")
-
-current.temp <- foreach(i = 1:length(station_codes), .combine = rbind) %do% {
-  temp <- fetch_wunderground(stationid = station_codes[i], start_date = yst_date_clean)
-  summarize_wunderground(temp)
-}
-```
-
 ## Predict from yesterday's temperature for all given future times
 
 ```{r}
@@ -48,8 +18,8 @@ current.temp <- foreach(i = 1:length(station_codes), .combine = rbind) %do% {
 predict_temp_naive <- function(current.temps, days_lag){
   
   preds <- current.temps %>%
-    select(station_code, pred.tmin = min.temp,
-           pred.tmax = max.temp, pred.tavg = avg.temp) %>%
+    select(station_code, pred.tmin = min_temp,
+           pred.tmax = max_temp, pred.tavg = mean_temp) %>%
     mutate(days_lag = days_lag)
   
   return(preds)
@@ -123,9 +93,9 @@ predict_temp_hist <- function(current.temps,
   }
   
   current.temps <- current.temps %>%
-    rename(tmin_lag = min.temp,
-           tmax_lag = max.temp,
-           tavg_fill_lag = mean.temp)
+    rename(tmin_lag = min_temp,
+           tmax_lag = max_temp,
+           tavg_fill_lag = mean_temp)
   
   pred.tmin <- predict(tmin.model, newdata = current.temps)
   pred.tmax <- predict(tmax.model, newdata = current.temps)

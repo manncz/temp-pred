@@ -1,0 +1,85 @@
+---
+title: "Make Temperature PRedictions"
+author: "Charlotte Mann GSI"
+date: "`r Sys.Date()`"
+output: md_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Set up
+Load scraping functions, prediction functions, and run historical prediction models
+```{r, child = c('00-wunderground-scrape.Rmd', '00-model-funs.Rmd','02-hist-model.Rmd'), include = F}
+```
+
+Get vector of station codes
+```{r}
+station_codes <- read.csv("../temp/station_xwalk.csv") %>%
+  select(id) %>%
+  unlist()
+```
+
+Get today's date
+```{r}
+tdy_date <- Sys.Date()
+tdy_date_clean <- str_replace_all(as.character(tdy_date),"\\-","")
+```
+
+Pull yesterday's temperature data
+```{r}
+yst_date <- tdy_date - 1
+yst_date_clean <- str_replace_all(as.character(yst_date),"\\-","")
+
+current.temp <- foreach(i = 1:length(station_codes), .combine = rbind) %do% {
+  temp <- fetch_wunderground(stationid = station_codes[i], start_date = yst_date_clean)
+  summarize_wunderground(temp)
+}
+```
+
+Load historical temp data
+
+```{r}
+load("../temp/hist-dat-clean.Rdata")
+```
+
+## Naive predictions
+
+```{r}
+naive.pred <- foreach(i = 1:5, .combine = rbind) %do% {
+  
+  predict_temp_naive(current.temp, i)
+  
+}
+```
+
+## Historical predictions - all data
+
+```{r}
+hist.all.pred <- foreach(i = 1:5, .combine = rbind) %do% {
+  
+  predict_temp_hist(current.temps= current.temp,
+                    local = FALSE, tmin.model = hist.mods[[i]]$tmin,
+                    tmax.model = hist.mods[[i]]$tmax, tavg.model = hist.mods[[i]]$tavg, 
+                    days_lag = i)
+  
+}
+
+```
+
+## Historical predictions - 2 weeks around date
+
+```{r}
+
+hist.local.pred <- foreach(i = 1:5, .combine = rbind) %do% {
+  
+  predict_temp_hist(current.temps= current.temp,
+                    local = TRUE, date = tdy_date, 
+                    hist.temps = hist.dat,
+                    days_lag = i)
+  
+}
+
+```
