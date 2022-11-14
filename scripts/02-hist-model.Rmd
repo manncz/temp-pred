@@ -26,4 +26,6 @@ hist.mods <- foreach(i = 1:5) %do% {
                               local = F, date = NULL)
   
 }
+
+save(hist.mods,file= "../temp/historical-temp-mods.Rdata")
 ```

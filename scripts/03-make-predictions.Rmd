@@ -11,8 +11,8 @@ knitr::opts_chunk$set(echo = TRUE)
 
 
 ## Set up
-Load scraping functions, prediction functions, and run historical prediction models
-```{r, child = c('00-wunderground-scrape.Rmd', '00-model-funs.Rmd','02-hist-model.Rmd'), include = F}
+Load scraping functions, prediction functions
+```{r, child = c('00-wunderground-scrape.Rmd', '00-model-funs.Rmd'), include = F}
 ```
 
 Get vector of station codes
@@ -39,10 +39,11 @@ current.temp <- foreach(i = 1:length(station_codes), .combine = rbind) %do% {
 }
 ```
 
-Load historical temp data
+Load historical temp data and models
 
 ```{r}
 load("../temp/hist-dat-clean.Rdata")
+load("../temp/historical-temp-mods.Rdata")
 ```
 
 ## Naive predictions
@@ -61,8 +62,8 @@ naive.pred <- foreach(i = 1:5, .combine = rbind) %do% {
 hist.all.pred <- foreach(i = 1:5, .combine = rbind) %do% {
   
   predict_temp_hist(current.temps= current.temp,
-                    local = FALSE, tmin.model = hist.mods[[i]]$tmin,
-                    tmax.model = hist.mods[[i]]$tmax, tavg.model = hist.mods[[i]]$tavg, 
+                    local = FALSE, tmin.model.beta = hist.mods[[i]]$tmin,
+                    tmax.model.beta = hist.mods[[i]]$tmax, tavg.model.beta = hist.mods[[i]]$tavg, 
                     days_lag = i)
   
 }

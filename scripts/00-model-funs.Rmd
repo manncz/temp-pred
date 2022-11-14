@@ -66,9 +66,9 @@ fit_hist_model <- function(hist.temps, days_lag,
     
   } 
     
-  tmin.mod <- lm(tmin ~ tmin_lag*station_code, data= mod.dat)
-  tmax.mod <- lm(tmax ~ tmax_lag*station_code, data= mod.dat)
-  tavg.mod <- lm(tavg_fill ~ tavg_fill_lag*station_code, data= mod.dat)
+  tmin.mod <- lm(tmin ~ tmin_lag*station_code, data= mod.dat)$coef
+  tmax.mod <- lm(tmax ~ tmax_lag*station_code, data= mod.dat)$coef
+  tavg.mod <- lm(tavg_fill ~ tavg_fill_lag*station_code, data= mod.dat)$coef
 
   return(list(tmin = tmin.mod, tmax = tmax.mod, tavg = tavg.mod))
 
@@ -82,14 +82,14 @@ fit that model. When using all historical data, give the function those model fi
 predict_temp_hist <- function(current.temps, 
                               local = TRUE,
                               date = NULL, hist.temps = NULL,
-                              tmin.model = NULL, tmax.model=NULL, tavg.model=NULL, 
+                              tmin.model.beta = NULL, tmax.model.beta=NULL, tavg.model.beta=NULL, 
                               days_lag){
   
   if(local){
     mods <- fit_hist_model(date=date, hist.temps=hist.temps, days_lag = days_lag, local=T)
-    tmin.model <- mods[["tmin"]]
-    tmax.model <- mods[["tmax"]]
-    tavg.model <- mods[["tavg"]]
+    tmin.model.beta <- mods[["tmin"]]
+    tmax.model.beta <- mods[["tmax"]]
+    tavg.model.beta <- mods[["tavg"]]
   }
   
   current.temps <- current.temps %>%
@@ -97,9 +97,13 @@ predict_temp_hist <- function(current.temps,
            tmax_lag = max_temp,
            tavg_fill_lag = mean_temp)
   
-  pred.tmin <- predict(tmin.model, newdata = current.temps)
-  pred.tmax <- predict(tmax.model, newdata = current.temps)
-  pred.tavg <- predict(tavg.model, newdata = current.temps)
+  mm.tmin <- model.matrix( ~ tmin_lag*station_code, data= current.temps)
+  mm.tmax <- model.matrix( ~ tmax_lag*station_code, data= current.temps)
+  mm.tavg <- model.matrix( ~ tavg_fill_lag*station_code, data= current.temps)
+  
+  pred.tmin <- mm.tmin %*% tmin.model.beta
+  pred.tmax <- mm.tmax %*% tmax.model.beta
+  pred.tavg <- mm.tavg %*% tavg.model.beta
   
   preds <- data.frame(station_code = current.temps$station_code,
                       pred.tmin,
