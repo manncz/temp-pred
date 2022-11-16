@@ -15,18 +15,43 @@ lapply(mypacks, library, character.only=TRUE)  # load all packages
 
 ```{r}
 
-predict_temp_naive <- function(current.temps, days_lag){
+predict_temp_naive <- function(current.temps, days_lag, date){
   
   preds <- current.temps %>%
     select(station_code, pred.tmin = min_temp,
            pred.tmax = max_temp, pred.tavg = mean_temp) %>%
-    mutate(days_lag = days_lag)
+    mutate(date_pred = date + days(days_lag))
   
   return(preds)
   
 }
 
 ```
+
+## Predict from historical mean statistic for the given day
+
+```{r}
+
+predict_temp_hist_mean <- function(hist.temps, days_lag, date){
+  
+  pred_date = date + days(days_lag)
+  yr = year(date)
+  
+  preds <- hist.temps %>%
+    mutate(month_day = make_date(yr, month(date), day(date))) %>%
+    filter(month_day == pred_date) %>%
+    group_by(station_code, month_day) %>%
+    summarize(across(starts_with("t"), ~mean(.x, na.rm = T), .names = "pred.{.col}")) %>%
+    rename(pred_date = month_day)
+  
+  return(preds)
+  
+}
+
+
+```
+
+
 
 ## Predict from historical data - 2 weeks around today's date (local=T) or all days (local = F)
 
@@ -36,39 +61,28 @@ Function to fit a model either on all historical data, or for historical data 2 
 Models are of the form:
 
 $$Y_{s,t,d} = \alpha + \beta Y_{s,t,(d-\ell)} + \alpha_{s}I_s + \beta_{s}Y_{s,t,(d-\ell)}I_s + \epsilon_{s,t,d}$$
-Where $s$ is the station id, $t$ is the year, $d$ is the day of the year, and $\ell$ is the number of lag days. $I_s$ is an indicator for the station. 
+Where $s$ is the station id, $t$ is the year, $d$ is the day of the year, and $\ell$ is the number of lag days. $I_s$ is an indicator for the station. This is equivalent to fitting 20 different models - it just makes things easier with the data setup.
+
 
 ```{r}
-fit_hist_model <- function(hist.temps, days_lag, 
-                           local = T, date=NULL){
-  
-  if(local == T){
-    
-    start_date = date - weeks(1) - days(days_lag)
+fit_hist_model <- function(hist.temps, days_lag, date){
+
+  start_date = date - weeks(1) - days(days_lag)
       
-    startm<-month(start_date)
-    startd<-day(start_date)
+  startm<-month(start_date)
+  startd<-day(start_date)
   
-    mod.dat <- hist.temps %>%
+  mod.dat <- hist.temps %>%
       mutate(year = year(date)) %>%
       mutate(start_date = make_date(year, startm, startd)) %>%
       mutate(keep = date %within% interval(start_date, start_date + weeks(2) + days(days_lag)))%>%
       filter(keep) %>%
       group_by(station_code, year) %>%
       mutate(across(tmin:tavg_fill, ~lag(.x, n = days_lag), .names = "{.col}_lag"))
-    
-  }else{
-    
-    mod.dat <- hist.temps %>%
-      mutate(year = year(date)) %>%
-      group_by(station_code, year) %>%
-      mutate(across(tmin:tavg_fill, ~lag(.x, n = days_lag), .names = "{.col}_lag"))
-    
-  } 
-    
+
   tmin.mod <- lm(tmin ~ tmin_lag*station_code, data= mod.dat)$coef
   tmax.mod <- lm(tmax ~ tmax_lag*station_code, data= mod.dat)$coef
-  tavg.mod <- lm(tavg_fill ~ tavg_fill_lag*station_code, data= mod.dat)$coef
+  tavg.mod <- lm(tavg ~ tavg_lag*station_code, data= mod.dat)$coef
 
   return(list(tmin = tmin.mod, tmax = tmax.mod, tavg = tavg.mod))
 
@@ -79,27 +93,21 @@ Make predictions based on historical data. When predicting only using the weeks 
 fit that model. When using all historical data, give the function those model fits (they don't need to be run over and over)
 
 ```{r}
-predict_temp_hist <- function(current.temps, 
-                              local = TRUE,
-                              date = NULL, hist.temps = NULL,
-                              tmin.model.beta = NULL, tmax.model.beta=NULL, tavg.model.beta=NULL, 
-                              days_lag){
+predict_temp_hist <- function(current.temps, date, hist.temps, days_lag){
   
-  if(local){
-    mods <- fit_hist_model(date=date, hist.temps=hist.temps, days_lag = days_lag, local=T)
-    tmin.model.beta <- mods[["tmin"]]
-    tmax.model.beta <- mods[["tmax"]]
-    tavg.model.beta <- mods[["tavg"]]
-  }
+  mods <- fit_hist_model(date=date, hist.temps=hist.temps, days_lag = days_lag)
+  tmin.model.beta <- mods[["tmin"]]
+  tmax.model.beta <- mods[["tmax"]]
+  tavg.model.beta <- mods[["tavg"]]
   
   current.temps <- current.temps %>%
     rename(tmin_lag = min_temp,
            tmax_lag = max_temp,
-           tavg_fill_lag = mean_temp)
+           tavg_lag = mean_temp)
   
   mm.tmin <- model.matrix( ~ tmin_lag*station_code, data= current.temps)
   mm.tmax <- model.matrix( ~ tmax_lag*station_code, data= current.temps)
-  mm.tavg <- model.matrix( ~ tavg_fill_lag*station_code, data= current.temps)
+  mm.tavg <- model.matrix( ~ tavg_lag*station_code, data= current.temps)
   
   pred.tmin <- mm.tmin %*% tmin.model.beta
   pred.tmax <- mm.tmax %*% tmax.model.beta
@@ -109,10 +117,9 @@ predict_temp_hist <- function(current.temps,
                       pred.tmin,
                       pred.tmax,
                       pred.tavg,
-                      days_lag = days_lag)
+                      date_pred = date + days(days_lag))
   
   return(preds)
 } 
-
 ```
 

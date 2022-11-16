@@ -25,7 +25,6 @@ station_codes <- read.csv("../temp/station_xwalk.csv") %>%
 Get today's date
 ```{r}
 tdy_date <- Sys.Date()
-tdy_date_clean <- str_replace_all(as.character(tdy_date),"\\-","")
 ```
 
 Pull yesterday's temperature data
@@ -43,41 +42,42 @@ Load historical temp data and models
 
 ```{r}
 load("../temp/hist-dat-clean.Rdata")
-load("../temp/historical-temp-mods.Rdata")
 ```
 
 ## Naive predictions
 
 ```{r}
-naive.pred <- foreach(i = 1:5, .combine = rbind) %do% {
+naive.pred <- foreach(i = 2:6, .combine = rbind) %do% {
   
-  predict_temp_naive(current.temp, i)
+  predict_temp_naive(current.temps=current.temp, 
+                     days_lag = i, 
+                     date = yst_date)
   
 }
 ```
 
-## Historical predictions - all data
+## Historical predictions - average over history
 
 ```{r}
-hist.all.pred <- foreach(i = 1:5, .combine = rbind) %do% {
+
+hist.mean.pred <- foreach(i = 2:6, .combine = rbind) %do% {
   
-  predict_temp_hist(current.temps= current.temp,
-                    local = FALSE, tmin.model.beta = hist.mods[[i]]$tmin,
-                    tmax.model.beta = hist.mods[[i]]$tmax, tavg.model.beta = hist.mods[[i]]$tavg, 
-                    days_lag = i)
+  predict_temp_hist_mean(hist.temps=hist.dat, days_lag = i, date=yst_date)
   
 }
 
 ```
+
+
 
 ## Historical predictions - 2 weeks around date
 
 ```{r}
 
-hist.local.pred <- foreach(i = 1:5, .combine = rbind) %do% {
+hist.local.pred <- foreach(i = 2:6, .combine = rbind) %do% {
   
-  predict_temp_hist(current.temps= current.temp,
-                    local = TRUE, date = tdy_date, 
+  predict_temp_hist(current.temps= current.temp, 
+                    date = yst_date, 
                     hist.temps = hist.dat,
                     days_lag = i)
   
