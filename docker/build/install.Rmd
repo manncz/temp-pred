@@ -1,0 +1,98 @@
+---
+title: Configure docker
+---
+
+# Install R packages
+
+Here we install any required R packages.  The basic steps are:
+
+* Search the project code to automatically discover which R packages are required
+* Try to install the needed packages from CRAN
+* Manually install any other packages not on CRAN
+* Document the installed packages and their versions
+
+## Search for required packages
+
+Here we use `renv` to search the project code to automatically discover which R packages are required.  The required packages are then written to the file `required_R_packages.txt`.  In some cases `renv` won't properly discover all of the required packages.  For example, it will discover package `foo` if you have the following code
+
+    library(foo)
+
+but not if you have
+
+    mypackages = c("foo", "bar")
+    for (x in mypackages) library(x, character.only=TRUE)
+    
+If `renv` does not properly discover the required packages automatically, the code below can be removed and the file `required_R_packages.txt` can be created by hand.
+
+### Specify Code Directories
+
+We first specify the directories that contain any R code.  Any R code in these directories (or subdirectories) will be searched for required packages.
+
+```{r}
+code_directories = c("~")
+```
+
+### Find required packages
+
+Then use `renv` to search for any packages that are used in the code.
+
+```{r}
+required_packages = c()
+for (code_directory in code_directories) {
+  required_packages = c(required_packages, renv::dependencies(path=code_directory)$Package)
+}
+required_packages = unique(required_packages)
+cat(required_packages,sep="\n")
+```
+
+### Write to file
+
+Then write the list of required packages to the file `required_R_packages.txt`.  This file will be read back in below when installing packages from CRAN.  Thus, as noted above, if the required packages aren't properly discovered automatically, this file can alternatively be created by hand.
+
+```{r}
+cat(required_packages,file="required_R_packages.txt",sep="\n")
+```
+
+## Install Packages from CRAN
+
+We now attempt to install the required packages from CRAN.  For each package, we check if it is already installed, and if not, try to install it from CRAN.
+
+```{r}
+## Read in the required packages
+required_packages = scan("required_R_packages.txt", what="character")
+## Before installing, first create and set user library
+dir.create(path = Sys.getenv("R_LIBS_USER"), showWarnings = FALSE, recursive = TRUE)
+.libPaths(Sys.getenv("R_LIBS_USER"))
+## Install required packages
+for (required_package in required_packages) if (!require(required_package, character.only=TRUE)) install.packages(required_package)
+```
+
+## Install other packages manually
+
+Any other packages that are required but not available on CRAN are installed manually. 
+
+```{r}
+## Packages from github
+# devtools::install_github("githubusername/repo", upgrade="never")
+## Bioconductor packages
+# if (!requireNamespace("BiocManager", quietly = TRUE))
+#     install.packages("BiocManager")
+# BiocManager::install()  # Installs core bioconductor packages
+# BiocManager::install(c("packageA", "packageB"))
+## Local packages
+# devtools::install_local("~/package/mypackage", upgrade="never")
+```
+
+## Create renv lockfile
+
+This will use `renv` to create a `renv.lock` file, which documents all of the required packages (including dependencies) and the versions that are installed.
+
+```{r}
+options(renv.consent=TRUE)
+lock = renv::snapshot(packages=required_packages, lockfile=NULL)
+renv:::renv_lockfile_write(lock,file="renv.lock")
+```
+
+
+
+

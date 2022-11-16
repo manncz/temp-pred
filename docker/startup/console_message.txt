@@ -1,0 +1,12 @@
+
+\033[1;36mTo get started, please enter the following URL into your web browswer:
+
+\033[1;33m          http://localhost/
+
+\033[1;36mNote: If you are unable to copy and paste the link with your mouse, 
+you may need to use command-c or control-c on the keyboard to copy, 
+and command-v or control-v to paste.  Alternatively, you can enter 
+the link manually.
+
+\033[1;36mTo quit, type\033[0;33m exit\033[1;36m and press enter.
+\e[0m   
