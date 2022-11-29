@@ -1,0 +1,61 @@
+---
+title: "Make Temperature Predictions - Historical Average"
+author: "Charlotte Mann GSI"
+date: "`r Sys.Date()`"
+output: md_document
+---
+
+```{r setup-pred, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+rdirs <- list.dirs("/home/rep/R", recursive = F)
+Rver <- strsplit(R.version$minor, ".", fixed=T)[[1]][1]
+Rver  <- paste(R.version$major, Rver, sep =".")
+pkgdir  <- paste(rdirs, Rver, sep ="/")
+
+.libPaths(pkgdir)
+
+library(dplyr)
+library(lubridate)
+library(stringr)
+library(foreach)
+```
+
+## Set up
+Load prediction functions
+```{r, child = '00-model-funs.Rmd', include = F}
+```
+
+Load current temperatures and historical data
+```{r}
+load("../data/temp/current-temps.Rdata")
+load("../data/processed/hist-dat-clean.Rdata")
+```
+
+Load station codes
+```{r}
+station_xwalk <- read.csv("../data/temp/station_xwalk.csv")
+```
+
+Get today's & yesterday's date
+```{r}
+tdy_date <- Sys.Date()
+yst_date <- tdy_date - 1
+```
+
+## Historical predictions - average over history
+
+```{r}
+hist.mean.pred <- foreach(i = 2:6, .combine = rbind) %do% {
+  
+  predict_temp_hist_mean(hist.temps=hist.dat, days_lag = i, date=yst_date)
+  
+}
+
+format_preds(hist.mean.pred, date = tdy_date, 
+             station_codes_order = station_xwalk$id,
+             fpath = "../output/temp-pred.txt")
+
+```
+
+
