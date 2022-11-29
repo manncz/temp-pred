@@ -1,0 +1,58 @@
+---
+title: "Download Current Temperatures"
+author: "Charlotte Mann GSI"
+date: "`r Sys.Date()`"
+output: md_document
+---
+
+
+```{r setup-pred, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+rdirs <- list.dirs("/home/rep/R", recursive = F)
+
+Rver <- strsplit(R.version$minor, ".", fixed=T)[[1]][1]
+Rver  <- paste(R.version$major, Rver, sep =".")
+pkgdir  <- paste(rdirs, Rver, sep ="/")
+
+.libPaths(pkgdir)
+```
+
+
+```{r}
+library(dplyr)
+library(stringr)
+library(lubridate)
+library(foreach)
+library(curl)
+library(jsonlite)
+```
+
+## Set up
+Load scraping functions, prediction functions
+```{r, child = c('00-wunderground-scrape.Rmd'), include = F}
+```
+
+Get vector of station codes
+```{r}
+station_codes <- read.csv("../data/temp/station_xwalk.csv") %>%
+  select(id) %>%
+  unlist()
+```
+
+Get today's date
+```{r}
+tdy_date <- Sys.Date()
+```
+
+Pull yesterday's temperature data
+```{r}
+yst_date <- tdy_date - 1
+yst_date_clean <- str_replace_all(as.character(yst_date),"\\-","")
+
+current.temp <- foreach(i = 1:length(station_codes), .combine = rbind) %do% {
+  temp <- fetch_wunderground(stationid = station_codes[i], start_date = yst_date_clean)
+  summarize_wunderground(temp)
+}
+
+save(current.temp, file = "../data/temp/current-temps.Rdata")
+```
