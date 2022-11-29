@@ -2,7 +2,7 @@
 title: "Process Historical Temp Data"
 author: "Charlotte Mann GSI"
 date: "`r Sys.Date()`"
-output: md_document
+output: github_document
 ---
 
 ```{r setup-mod, include=FALSE}
