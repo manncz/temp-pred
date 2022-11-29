@@ -5,22 +5,21 @@ date: "`r Sys.Date()`"
 output: md_document
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-mypacks <- c("dplyr", "lubridate", "stringr", "foreach")  # what packages are needed?
-lapply(mypacks, library, character.only=TRUE)  # load all packages
+```{r setup-mod, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
 ```
 
 ## Predict from yesterday's temperature for all given future times
 
 ```{r}
-
 predict_temp_naive <- function(current.temps, days_lag, date){
   
   preds <- current.temps %>%
     select(station_code, pred.tmin = min_temp,
            pred.tmax = max_temp, pred.tavg = mean_temp) %>%
-    mutate(date_pred = date + days(days_lag))
+    mutate(date_pred = date + days(days_lag)) %>%
+    select(station_code, date_pred, pred.tmin, pred.tavg, pred.tmax)
+
   
   return(preds)
   
@@ -42,7 +41,8 @@ predict_temp_hist_mean <- function(hist.temps, days_lag, date){
     filter(month_day == pred_date) %>%
     group_by(station_code, month_day) %>%
     summarize(across(starts_with("t"), ~mean(.x, na.rm = T), .names = "pred.{.col}")) %>%
-    rename(pred_date = month_day)
+    rename(date_pred = month_day) %>%
+    select(station_code, date_pred,  pred.tmin, pred.tavg, pred.tmax)
   
   return(preds)
   
@@ -66,23 +66,23 @@ Where $s$ is the station id, $t$ is the year, $d$ is the day of the year, and $\
 
 ```{r}
 fit_hist_model <- function(hist.temps, days_lag, date){
-
-  start_date = date - weeks(1) - days(days_lag)
       
-  startm<-month(start_date)
-  startd<-day(start_date)
+  startm<-month(date)
+  startd<-day(date)
   
   mod.dat <- hist.temps %>%
       mutate(year = year(date)) %>%
-      mutate(start_date = make_date(year, startm, startd)) %>%
-      mutate(keep = date %within% interval(start_date, start_date + weeks(2) + days(days_lag)))%>%
+      mutate(base_date = make_date(year, startm, startd),
+             start_date = base_date - weeks(1) - days(days_lag),
+             end_date = start_date + weeks(2) + days(days_lag)) %>%
+      mutate(keep = date %within% interval(start_date, end_date))%>%
       filter(keep) %>%
       group_by(station_code, year) %>%
-      mutate(across(tmin:tavg_fill, ~lag(.x, n = days_lag), .names = "{.col}_lag"))
+      mutate(across(starts_with("t"), ~lag(.x, n = days_lag), .names = "{.col}_lag"))
 
-  tmin.mod <- lm(tmin ~ tmin_lag*station_code, data= mod.dat)$coef
-  tmax.mod <- lm(tmax ~ tmax_lag*station_code, data= mod.dat)$coef
-  tavg.mod <- lm(tavg ~ tavg_lag*station_code, data= mod.dat)$coef
+  tmin.mod <- lm(tmin ~ tmin_lag*station_code, data= mod.dat)
+  tmax.mod <- lm(tmax ~ tmax_lag*station_code, data= mod.dat)
+  tavg.mod <- lm(tavg ~ tavg_lag*station_code, data= mod.dat)
 
   return(list(tmin = tmin.mod, tmax = tmax.mod, tavg = tavg.mod))
 
@@ -96,30 +96,51 @@ fit that model. When using all historical data, give the function those model fi
 predict_temp_hist <- function(current.temps, date, hist.temps, days_lag){
   
   mods <- fit_hist_model(date=date, hist.temps=hist.temps, days_lag = days_lag)
-  tmin.model.beta <- mods[["tmin"]]
-  tmax.model.beta <- mods[["tmax"]]
-  tavg.model.beta <- mods[["tavg"]]
+  tmin.model <- mods[["tmin"]]
+  tmax.model <- mods[["tmax"]]
+  tavg.model <- mods[["tavg"]]
   
   current.temps <- current.temps %>%
     rename(tmin_lag = min_temp,
            tmax_lag = max_temp,
            tavg_lag = mean_temp)
   
-  mm.tmin <- model.matrix( ~ tmin_lag*station_code, data= current.temps)
-  mm.tmax <- model.matrix( ~ tmax_lag*station_code, data= current.temps)
-  mm.tavg <- model.matrix( ~ tavg_lag*station_code, data= current.temps)
-  
-  pred.tmin <- mm.tmin %*% tmin.model.beta
-  pred.tmax <- mm.tmax %*% tmax.model.beta
-  pred.tavg <- mm.tavg %*% tavg.model.beta
+  pred.tmin <- predict(tmin.model, newdata = current.temps)
+  pred.tmax <- predict(tmax.model, newdata = current.temps)
+  pred.tavg <- predict(tavg.model, newdata = current.temps)
   
   preds <- data.frame(station_code = current.temps$station_code,
+                      date_pred = date + days(days_lag),
                       pred.tmin,
-                      pred.tmax,
                       pred.tavg,
-                      date_pred = date + days(days_lag))
+                      pred.tmax)
   
   return(preds)
+} 
+```
+
+
+```{r}
+format_preds <- function(preds, date, station_codes_order,
+                         fpath){
+  
+  out <- data.frame(date = as.character(tdy_date))
+
+  for(s in station_codes_order){
+    for(d in unique(preds$date_pred)){
+      
+      temp <- preds %>%
+        ungroup() %>%
+        filter(station_code == s & date_pred == d) %>%
+        select(starts_with("pred")) %>%
+        round(digits =2)
+      
+      out <- cbind(out, temp)
+    }
+  }
+  
+  write.table(out, file = fpath, sep = ",",
+            row.names = FALSE, col.names=F)
 } 
 ```
 
