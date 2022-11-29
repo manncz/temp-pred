@@ -6,9 +6,7 @@ output: md_document
 ---
 
 ```{r setup2, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-mypacks <- c("dplyr","curl", "jsonlite", "lubridate")   # what packages are needed?
-lapply(mypacks, library, character.only=TRUE)  # load all packages
+knitr::opts_chunk$set(echo = FALSE)
 ```
 
 Adapted from script by Yash Patel found [here](https://github.com/yashpatel5400/stats604-project4/blob/main/raw_data/wunderground_download.py)

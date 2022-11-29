@@ -5,10 +5,18 @@ date: "`r Sys.Date()`"
 output: md_document
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-mypacks <- c("dplyr", "lubridate")  # what packages are needed?
-lapply(mypacks, library, character.only=TRUE)  # load all packages
+```{r setup-proc, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+rdirs <- list.dirs("/home/rep/R", recursive = F)
+Rver <- strsplit(R.version$minor, ".", fixed=T)[[1]][1]
+Rver  <- paste(R.version$major, Rver, sep =".")
+pkgdir  <- paste(rdirs, Rver, sep ="/")
+
+.libPaths(pkgdir)
+
+library(dplyr)
+library(lubridate)
 ```
 
 Read in raw data, downloaded from NOAA https://www.ncei.noaa.gov/cdo-web/search?datasetid=GHCND. I had to download the data in two different files, which just have different stations.
