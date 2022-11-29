@@ -7,20 +7,25 @@ output: md_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-mypacks <- c("dplyr", "lubridate", "stringr", "foreach","doParallel")  # what packages are needed?
-lapply(mypacks, library, character.only=TRUE)  # load all packages
+library(dplyr)
+library(lubridate)
+library(stringr)
+library(foreach)
+library(doParallel)
+library(tidyr)
 ```
 
 
 ## Set up
 Load scraping functions, prediction functions, and run historical prediction models
-```{r, child = c('00-wunderground-scrape.Rmd', '00-model-funs.Rmd'), include = F}
+```{r, child =  '00-model-funs.Rmd', include = F}
 ```
 
 Load historical temp data
 
 ```{r}
-load("../temp/hist-dat-clean.Rdata")
+load("../data/processed/hist-dat-clean.Rdata")
+xwalk <- read.csv("../data/temp/station_xwalk.csv")
 ```
 
 ```{r}
@@ -30,49 +35,225 @@ hist.dat <- hist.dat %>%
 table(hist.dat$year)
 ```
 
-Leave one year out CV.
+## Predicting using "current temp"
 
-I am going to do this leaving out years 1998-2022 since those years have almost full data.
+Leave one year out CV for RMSE, leaving out years 2000-2021 to be most relevant (and didn't change much when left out 1967-1999 additionally) and because the modeling takes much longer.
 
 ```{r}
-dlag = 1
-
-years <- seq(2000, 2020, by =1)
+years <- seq(2000, 2021, by =1)
 
 numCores <- detectCores()
 registerDoParallel(numCores)
 
 out <- foreach(y = years, .combine = rbind) %dopar% {
   
-  mods <- fit_hist_model(hist.temps = hist.dat %>% filter(year != y), local = F, days_lag = dlag,
-                 date = NULL)
-  
-  test.dat <- hist.dat %>% filter(year != y) %>%
-     group_by(station_code, year) %>%
-      mutate(across(tmin:tavg_fill, ~lag(.x, n = dlag), .names = "{.col}_lag"))
-  
-  test.dat$p.tmin <- predict(mods[["tmin"]], newdata = test.dat)
-  test.dat$p.tmax <- predict(mods[["tmax"]], newdata = test.dat)
-  test.dat$p.tavg <- predict(mods[["tavg"]], newdata = test.dat)
+  test.dat <- hist.dat %>% filter(year == y) %>%
+    group_by(station_code) %>%
+    mutate(across(starts_with("t"), ~lag(.x, n=1),.names="p.{.col}_lag1"),
+           across(starts_with("t"), ~lag(.x, n=2),.names="p.{.col}_lag2"),
+           across(starts_with("t"), ~lag(.x, n=3),.names="p.{.col}_lag3"),
+           across(starts_with("t"), ~lag(.x, n=4),.names="p.{.col}_lag4"),
+           across(starts_with("t"), ~lag(.x, n=5),.names="p.{.col}_lag5")) %>%
+    pivot_longer(cols = starts_with("p."),
+                 names_to = c("var", "lag"),
+                 names_pattern = c("(.*)_(.*)"),
+                 values_to = "pred") %>%
+    pivot_wider(values_from = pred, names_from = var)
   
   mse.result <- test.dat %>%
     ungroup() %>%
-    mutate(err.tmin = tmin-p.tmin,
-           err.tmax = tmax-p.tmax,
-           err.tavg = tavg-p.tavg) %>%
-    mutate(across(starts_with("err"), ~mean(.x, na.rm=T), .names="mse_{.col}")) %>%
-    group_by(station_code) %>%
-    summarize(across((starts_with("err")|starts_with("mse")),~mean(.x, na.rm=T))) %>%
-    mutate(days_lag = dlag,
-           test_year = y)
+    group_by(station_code, lag) %>%
+    mutate(err.tmin = (tmin-p.tmin)^2,
+           err.tmax = (tmax-p.tmax)^2,
+           err.tavg = (tavg-p.tavg)^2) %>%
+    summarize(across(starts_with("err"), ~sqrt(mean(.x, na.rm=T)), .names="mse_{.col}")) %>%
+    mutate(test_year = y)
  
 }
 stopImplicitCluster()
 
-
-mse.res <- out %>%
-  group_by(station_code, days_lag) %>%
-  summarize(across((starts_with("err")|starts_with("mse")),~mean(.x, na.rm=T)))
-
 ```
 
+```{r}
+out %>%
+  group_by(station_code, lag) %>%
+  summarize(across(starts_with("mse"),~mean(.x, na.rm=T)))
+```
+
+```{r}
+out %>%
+  group_by(lag) %>%
+  summarize(across(starts_with("mse"),~mean(.x, na.rm=T)))
+```
+
+## Predicting using historical averages for a specific month/day
+
+```{r}
+years <- seq(2000, 2000, by =1)
+
+numCores <- detectCores()
+registerDoParallel(numCores)
+
+out <- foreach(y = years, .combine = rbind) %dopar% {
+  
+  train.preds <- hist.dat %>% filter(year != y) %>%
+    mutate(month_day = make_date(y, month(date), day(date))) %>%
+    group_by(station_code, month_day) %>%
+    summarize(across(starts_with("t"), ~mean(.x, na.rm=T), .names = "p.{.col}")) %>%
+    rename(date = month_day)
+  
+  test.dat <- hist.dat %>%
+    filter(year == y) %>%
+    left_join(train.preds, by = c("station_code","date"))
+  
+  mse.result <- test.dat %>%
+    ungroup() %>%
+    group_by(station_code) %>%
+    mutate(err.tmin = (tmin-p.tmin)^2,
+           err.tmax = (tmax-p.tmax)^2,
+           err.tavg = (tavg-p.tavg)^2) %>%
+    summarize(across(starts_with("err"), ~sqrt(mean(.x, na.rm=T)), .names="mse_{.col}")) %>%
+    mutate(test_year = y)
+ 
+}
+stopImplicitCluster()
+```
+
+
+```{r}
+mse.res <- out %>%
+  group_by(station_code) %>%
+  summarize(across(starts_with("mse"),~mean(.x, na.rm=T)))
+
+xwalk %>%
+  select(city, station_code = id) %>%
+  left_join(mse.res, by = "station_code")
+
+mean(mse.res$mse_err.tmin)
+mean(mse.res$mse_err.tavg)
+mean(mse.res$mse_err.tmax)
+```
+
+
+## Predicting using OLS 2 weeks around date for the next day
+
+This takes 2 minutes per left out year.
+
+```{r, ols-lag1}
+
+registerDoParallel(numCores)
+
+system.time({
+
+out <- foreach(y = years, .combine = rbind) %do% {
+  
+  train.dat<- hist.dat %>% filter(year != y)
+  test.dat <- hist.dat %>% 
+    filter(year == y) %>%
+    rename(min_temp = tmin,
+           max_temp = tmax,
+           mean_temp = tavg)
+  
+  
+  days <- unique(test.dat$date)
+  
+  system.time({
+  preds <- foreach(d = days, .combine = rbind) %dopar%{
+    
+    predict_temp_hist(current.temps=test.dat %>% filter(date == d), 
+                      date = d, hist.temps = train.dat, days_lag=1)
+    
+  }
+  })
+  
+  mse.result <- test.dat %>%
+    left_join(preds, by = c("station_code", "date" = "date_pred")) %>%
+    ungroup() %>%
+    group_by(station_code) %>%
+    mutate(err.tmin = (min_temp-pred.tmin)^2,
+           err.tmax = (max_temp-pred.tmax)^2,
+           err.tavg = (mean_temp-pred.tavg)^2) %>%
+    summarize(across(starts_with("err"), ~sqrt(mean(.x, na.rm=T)), .names="mse_{.col}")) %>%
+    mutate(test_year = y)
+ 
+}
+})
+stopImplicitCluster()
+```
+
+
+```{r}
+mse.res <- out %>%
+  group_by(station_code) %>%
+  summarize(across(starts_with("mse"),~mean(.x, na.rm=T)))
+
+xwalk %>%
+  select(city, station_code = id) %>%
+  left_join(mse.res, by = "station_code")
+
+mean(mse.res$mse_err.tmin)
+mean(mse.res$mse_err.tavg)
+mean(mse.res$mse_err.tmax)
+```
+
+
+## Predicting using OLS 2 weeks around date for 5 days from then
+
+This takes 2 minutes per left out year, so I will just run it for 20 years - 2000-2020
+
+```{r, ols-lag5}
+
+registerDoParallel(numCores)
+
+system.time({
+
+out <- foreach(y = years, .combine = rbind) %do% {
+  
+  train.dat<- hist.dat %>% filter(year != y)
+  test.dat <- hist.dat %>% 
+    filter(year == y) %>%
+    rename(min_temp = tmin,
+           max_temp = tmax,
+           mean_temp = tavg)
+  
+  
+  days <- unique(test.dat$date)
+  
+  system.time({
+  preds <- foreach(d = days, .combine = rbind) %dopar%{
+    
+    predict_temp_hist(current.temps=test.dat %>% filter(date == d), 
+                      date = d, hist.temps = train.dat, days_lag=5)
+    
+  }
+  })
+  
+  mse.result <- test.dat %>%
+    left_join(preds, by = c("station_code", "date" = "date_pred")) %>%
+    ungroup() %>%
+    group_by(station_code) %>%
+    mutate(err.tmin = (min_temp-pred.tmin)^2,
+           err.tmax = (max_temp-pred.tmax)^2,
+           err.tavg = (mean_temp-pred.tavg)^2) %>%
+    summarize(across(starts_with("err"), ~sqrt(mean(.x, na.rm=T)), .names="mse_{.col}")) %>%
+    mutate(test_year = y)
+ 
+}
+})
+stopImplicitCluster()
+```
+
+
+```{r}
+mse.res <- out %>%
+  group_by(station_code) %>%
+  summarize(across(starts_with("mse"),~mean(.x, na.rm=T)))
+
+xwalk %>%
+  select(city, station_code = id) %>%
+  left_join(mse.res, by = "station_code")
+
+mean(mse.res$mse_err.tmin)
+mean(mse.res$mse_err.tavg)
+mean(mse.res$mse_err.tmax)
+```
