@@ -1,0 +1,100 @@
+---
+title: "Observed Temperatures"
+author: "Charlotte Mann"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup-obs, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+rdirs <- list.dirs("/home/rep/R", recursive = F)
+
+Rver <- strsplit(R.version$minor, ".", fixed=T)[[1]][1]
+Rver  <- paste(R.version$major, Rver, sep =".")
+pkgdir  <- paste(rdirs, Rver, sep ="/")
+
+.libPaths(pkgdir)
+
+library(tidyr)
+library(dplyr)
+library(stringr)
+library(lubridate)
+library(foreach)
+library(curl)
+library(jsonlite)
+```
+Load scraping functions, prediction functions
+```{r, child = c('00-wunderground-scrape.Rmd'), include = F}
+```
+
+# Template
+
+```{r}
+obs.temp <- read.csv("../data/temp/observed_template.csv") %>%
+  rename(date_anchor = X)
+
+obs.temp <-  obs.temp %>%
+  mutate(date_anchor = mdy(date_anchor)) %>%
+  pivot_longer(!date_anchor, names_to = "label",values_to = "val") %>%
+  mutate(station_code = str_extract(label, "([A-Z]+)"),
+         days_lag = str_extract(label, "\\d"),
+         stat = str_extract(label, "[a-z]+")) %>%
+  mutate(date = date_anchor + days(days_lag)) %>%
+  select(date_anchor, label, station_code, date, stat)
+```
+
+## Download Setup
+
+```{r}
+desired_dates <- unique(obs.temp$date)
+station_codes <- unique(obs.temp$station_code)
+
+first_date <- Sys.Date() 
+#- days(1)
+dates_pull <- desired_dates[desired_dates <= first_date]
+
+#reformat for wunderground
+dates_pull <- str_replace_all(as.character(dates_pull),"\\-","")
+```
+
+# Download Actual Temperatures
+
+```{r}
+temps <- foreach(i = 1:length(dates_pull), .combine = rbind) %do% {
+  foreach(j = 1:length(station_codes), .combine = rbind) %do% {
+    temp <- fetch_wunderground(stationid = station_codes[j], 
+                               start_date = dates_pull[i])
+    summarize_wunderground(temp)
+  }
+}
+```
+
+```{r}
+temps.clean <- temps %>%
+  select(-first_obs_time, -last_obs_time) %>%
+  pivot_longer(min_temp:mean_temp,
+               names_to = "label",
+               values_to = "temp") %>%
+  mutate(stat = str_replace(str_replace(label, "_temp", ""),"mean","avg"),
+         temp = round(temp, digits = 2)) %>%
+  select(-label)
+```
+
+## Merge onto template
+
+```{r}
+obs.temp <- obs.temp %>%
+  left_join(temps.clean, by = c("station_code","date","stat"))
+```
+
+## Reformat and save
+
+```{r}
+obs.temp.clean <- obs.temp %>%
+  select(date_anchor, label, temp) %>%
+  pivot_wider(names_from = "label",
+              values_from = "temp")
+
+write.table(obs.temp.clean, file = "../output/obs-temps.txt", sep = ",",
+            row.names = F, col.names=T)
+```
