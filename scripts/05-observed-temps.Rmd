@@ -49,8 +49,7 @@ obs.temp <-  obs.temp %>%
 desired_dates <- unique(obs.temp$date)
 station_codes <- unique(obs.temp$station_code)
 
-first_date <- Sys.Date() 
-#- days(1)
+first_date <- Sys.Date() - days(1)
 dates_pull <- desired_dates[desired_dates <= first_date]
 
 #reformat for wunderground
