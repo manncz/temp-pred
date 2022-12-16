@@ -1,0 +1,102 @@
+---
+title: "RMSE Calculation"
+author: "Charlotte Mann"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(xlsx)
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(ggplot2)
+library(foreach)
+```
+
+## read in predictions 
+
+```{r, warning=F}
+path <- "../604 Weather Predictions.xlsx"
+sheets <- excel_sheets(path = path)
+dat.list <- list()
+for(x in sheets){
+  dat.list[[x]] <- read_xlsx(path, sheet = x)[,-1] %>%
+  mutate(across(everything(), ~round(as.numeric(.x),1)))
+}
+```
+
+Fix column names for Char predictions
+```{r}
+station_xwalk <- read.csv("../data/temp/station_xwalk.csv")
+station_order <- station_xwalk$id
+
+
+colnms<- paste0(rep(paste0(rep(station_order,each = 5),1:5), each = 3),c("min","avg","max"))
+
+colnames(dat.list[["CharA"]]) <- colnames(dat.list[["CharB"]]) <- colnames(dat.list[["CharC"]]) <- colnms
+```
+
+```{r}
+observed.long <- dat.list[["observed"]] %>%
+   mutate(date = row_number()) %>%
+  pivot_longer(!date, names_to = "label",values_to = "obs_val") %>%
+  mutate(station_code = str_extract(label, "([A-Z]+)"),
+         days_lag = str_extract(label, "\\d"),
+         stat = str_extract(label, "[a-z]+"))
+```
+
+```{r}
+dat.list.long <- list()
+
+for(x in names(dat.list)){
+  dat.list.long[[x]] <- dat.list[[x]] %>%
+  mutate(date = row_number()) %>%
+  pivot_longer(!date, names_to = "label",values_to = "val") %>%
+  mutate(station_code = str_extract(label, "([A-Z]+)"),
+         days_lag = str_extract(label, "\\d"),
+         stat = str_extract(label, "[a-z]+")) %>%
+  select(everything(),val) %>%
+  left_join(observed.long,by =c("date","label","station_code","days_lag","stat"))
+}
+```
+
+
+## RMSE
+
+```{r}
+rmse <- c()
+
+for(x in names(dat.list)){
+  
+  rmse[x] <- dat.list.long[[x]]%>%
+    filter(!is.na(obs_val)) %>%
+    mutate(sq_err = (obs_val - val)^2) %>%
+    summarize(rmse = sqrt(mean(sq_err)))
+  
+}
+
+rmse
+```
+
+```{r}
+
+rmse.days <- foreach(x = names(dat.list), .combine = rbind) %do% {
+  
+  rmse <- dat.list.long[[x]]%>%
+    filter(!is.na(obs_val)) %>%
+    mutate(sq_err = (obs_val - val)^2) %>%
+    group_by(days_lag) %>%
+    summarize(rmse = sqrt(mean(sq_err)))
+  
+  it.ob <- rmse$rmse
+  names(it.ob) <-rmse$days_lag
+  
+  it.ob
+}
+
+rownames(rmse.days) <- names(dat.list.long)
+rmse.days
+```
