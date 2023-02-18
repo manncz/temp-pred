@@ -27,12 +27,15 @@ Load scraping functions, prediction functions
 ```{r, child = c('00-wunderground-scrape.Rmd'), include = F}
 ```
 
+Download and shape actual temperatures to compare students predictions with the truth.
+
 # Template
 
 ```{r}
 obs.temp <- read.csv("../data/temp/observed_template.csv") %>%
   rename(date_anchor = X)
 
+#reshape long and create columns for date, days lag, station, and min/mean/max
 obs.temp <-  obs.temp %>%
   mutate(date_anchor = mdy(date_anchor)) %>%
   pivot_longer(!date_anchor, names_to = "label",values_to = "val") %>%

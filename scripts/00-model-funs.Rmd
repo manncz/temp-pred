@@ -1,5 +1,5 @@
 ---
-title: "Process Historical Temp Data"
+title: "Helper Functions for Predicting Temperatures"
 author: "Charlotte Mann GSI"
 date: "`r Sys.Date()`"
 output: github_document
@@ -119,6 +119,7 @@ predict_temp_hist <- function(current.temps, date, hist.temps, days_lag){
 } 
 ```
 
+Format predictions for the course specifications.
 
 ```{r}
 format_preds <- function(preds, date, station_codes_order,

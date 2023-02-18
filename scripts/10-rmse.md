@@ -1,7 +1,7 @@
 RMSE Calculation
 ================
 Charlotte Mann
-2022-12-16
+2023-02-18
 
 ## read in predictions
 
@@ -26,7 +26,7 @@ for(x in sheets){
     ## New names:
     ## • `` -> `...1`
 
-Fix column names for Char predictions
+Fix column names for my (reference) predictions
 
 ``` r
 station_xwalk <- read.csv("../data/temp/station_xwalk.csv")
@@ -38,6 +38,8 @@ colnms<- paste0(rep(paste0(rep(station_order,each = 5),1:5), each = 3),c("min","
 colnames(dat.list[["CharA"]]) <- colnames(dat.list[["CharB"]]) <- colnames(dat.list[["CharC"]]) <- colnms
 ```
 
+Reshape observed data to merge
+
 ``` r
 observed.long <- dat.list[["observed"]] %>%
    mutate(date = row_number()) %>%
@@ -46,6 +48,10 @@ observed.long <- dat.list[["observed"]] %>%
          days_lag = str_extract(label, "\\d"),
          stat = str_extract(label, "[a-z]+"))
 ```
+
+Merge observed data onto each dataset of student predictions on date,
+station, days log, and statistic (all included in label as well), to
+ensure that everything is aligned.
 
 ``` r
 dat.list.long <- list()
@@ -63,6 +69,9 @@ for(x in names(dat.list)){
 ```
 
 ## RMSE
+
+Look at the overall root mean squared error for student & reference
+predictions.
 
 ``` r
 rmse <- c()
@@ -105,6 +114,8 @@ rmse
     ## 
     ## $observed
     ## [1] 0
+
+Now look at the RMSE, depending on the number of days lag.
 
 ``` r
 rmse.days <- foreach(x = names(dat.list), .combine = rbind) %do% {
