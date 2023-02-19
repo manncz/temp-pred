@@ -6,7 +6,7 @@ This repository contains the R code for generating baseline predictions of the t
 with student's temperature prediction models in STATS 604 at University of Michigan (Fall 2022, instructor Dr. Johann Gagnon-Bartsch).
 It also sets up a Docker image, which automatically generates temperature predictions using yesterday's temperature, scraped from [Weather Underground](https://www.wunderground.com).
 
-Students were tasked to predict the mean, minimum and maximum temperatures at 20 different weather stations each day, for the 5 days following, from November 28 and December 6, 2022. I implemented three different baseline models for comparison, ran cross validation to evaluate the models, and calculated the final prediction accuracy for the class.
+Students were tasked to predict the mean, minimum and maximum temperatures at 20 different weather stations each day, for the 5 days following, from November 28 and December 6, 2022. I implemented three different baseline (naive) models for comparison, to see if student's machine learning models would outperform simple imputation models. I also ran cross validation to evaluate the naive models and calculated the final prediction accuracy for the class.
 
 ### Contents
 
